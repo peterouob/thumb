@@ -1,0 +1,91 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    networks:
+      - monitor
+    extra_hosts:
+      - "host.docker.internal:192.168.0.100"
+    restart: unless-stopped
+    volumes:
+      - ./configs/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - ./configs/prometheus/rules.yaml:/etc/prometheus/rules.yml
+      - ./configs/prometheus/prometheus_data:/prometheus
+    ports:
+      - '9000:9090'
+  grafana:
+    image: grafana/grafana
+    networks:
+      - monitor
+    extra_hosts:
+      - "host.docker.internal:192.168.0.100"
+    restart: unless-stopped
+    environment:
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+    ports:
+      - '3001:3000'
+    depends_on:
+      - prometheus
+  alertmanager:
+    image: prom/alertmanager
+    networks:
+      - monitor
+    extra_hosts:
+      - "host.docker.internal:192.168.0.100"
+    volumes:
+      - ./configs/alertmanager:/etc/alertmanager
+      - ./configs/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    restart: always
+    ports:
+      - '9093:9093'
+  kafka:
+    image: 'bitnami/kafka:latest'
+    networks:
+      - my_bridge
+    extra_hosts:
+      - "host.docker.internal:192.168.0.100"
+    container_name: thumb-kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      - KAFKA_ENABLE_KRAFT=true
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,DOCKER://:29092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,DOCKER:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092,DOCKER://kafka:29092
+  kafka-ui:
+    container_name: thumb-kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "82:8080"
+    networks:
+      - my_bridge
+    extra_hosts:
+      - "host.docker.internal:192.168.0.100"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+      - DYNAMIC_CONFIG_ENABLED=true
+    depends_on:
+      - kafka
+  kafka-exporter:
+    image: danielqsj/kafka-exporter
+    command: [ "--kafka.server=host.docker.internal:9092" ]
+    ports:
+      - '9308:9308'
+    extra_hosts:
+      - "host.docker.internal:192.168.0.100"
+    networks:
+      - my_bridge
+    depends_on:
+      - kafka
+networks:
+  monitor:
+    driver: bridge
+  my_bridge:
+    driver: bridge

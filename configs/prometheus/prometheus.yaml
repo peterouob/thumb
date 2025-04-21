@@ -1,0 +1,16 @@
+global:
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+rule_files:
+  - './rules.yml'
+
+scrape_configs:
+  - job_name: 'thumb'
+    scrape_interval: 1s
+    static_configs:
+      - targets: ['host.docker.internal:8082']
+  - job_name: 'kafka'
+    scrape_interval: 1s
+    static_configs:
+      - targets: ['host.docker.internal:9308']
