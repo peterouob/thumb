@@ -11,6 +11,11 @@ import (
 
 var once sync.Once
 
+func init() {
+	utils.NewWriter("social")
+	utils.NewReader("social")
+}
+
 func main() {
 	go registerMetrics()
 

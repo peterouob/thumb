@@ -84,6 +84,16 @@ services:
       - my_bridge
     depends_on:
       - kafka
+  # redis cluster
+  redis-node1:
+    image: redis:latest
+    container_name: redis-node1
+    restart: always
+    network_mode: my_bridge
+    ports:
+      - '7001:7001'
+      - '17001:17001'
+      -
 networks:
   monitor:
     driver: bridge
