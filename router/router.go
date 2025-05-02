@@ -8,10 +8,8 @@ import (
 
 func InitRouter(r *gin.Engine) {
 
-	r.GET("/like", service.Like)
-	r.GET("/save", service.Save)
-	r.GET("/data", service.Data)
-	r.GET("/alert", service.Alert)
+	r.GET("/thumb", service.Thumb)
+
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 }

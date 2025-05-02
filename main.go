@@ -5,16 +5,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"log"
 	"sync"
+	prom "thumb/pkg/prometheus"
 	"thumb/router"
 	"thumb/utils"
 )
 
 var once sync.Once
-
-func init() {
-	utils.NewWriter("social")
-	utils.NewReader("social")
-}
 
 func main() {
 	go registerMetrics()
@@ -28,7 +24,7 @@ func main() {
 
 func registerMetrics() {
 	once.Do(func() {
-		prometheus.MustRegister(utils.LikeRequestsTotal, utils.SaveRequestsTotal, utils.DataRequestsTotal)
+		prometheus.MustRegister(prom.LikeRequestsTotal, prom.KafkaRequestTotal)
 	})
 	log.Println("register metrics")
 }
