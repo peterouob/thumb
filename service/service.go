@@ -10,6 +10,12 @@ import (
 	"thumb/pkg/prometheus"
 )
 
+func init() {
+	if kafka.Pd == nil {
+		kafka.NewProducer()
+	}
+}
+
 func Thumb(c *gin.Context) {
 
 	var m model.SocialAction
@@ -22,8 +28,7 @@ func Thumb(c *gin.Context) {
 		return
 	}
 
-	pd := kafka.NewProducer()
-	pd.Send(m.Topic, m)
+	kafka.Pd.Send(m.Topic, m)
 
 	countLike(c, http.StatusOK)
 	c.JSON(http.StatusOK, gin.H{

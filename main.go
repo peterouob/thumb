@@ -5,15 +5,22 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"log"
 	"sync"
+	"thumb/pkg/kafka"
 	prom "thumb/pkg/prometheus"
 	"thumb/router"
 	"thumb/utils"
+	"time"
 )
 
 var once sync.Once
 
 func main() {
-	go registerMetrics()
+	kafka.NewProducer()
+	consumer := kafka.NewConsumer("thumb_groub", []string{"thumb"}, 10, 10*time.Minute)
+	go func() {
+		registerMetrics()
+		consumer.StartConsume()
+	}()
 
 	r := gin.New()
 	r.Use(gin.Recovery())
