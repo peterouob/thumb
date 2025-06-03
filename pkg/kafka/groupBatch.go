@@ -3,6 +3,9 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"sync"
 	"thumb/model"
@@ -17,7 +20,7 @@ type ConsumeHandler interface {
 	ConsumeClaim(sarama.ConsumerGroupSession, sarama.ConsumerGroupClaim) error
 }
 
-type LikeHandler struct {
+type ConsumerGroup struct {
 	ready       chan bool
 	message     chan *sarama.ConsumerMessage
 	batchSize   int
@@ -28,19 +31,20 @@ type LikeHandler struct {
 	mu          sync.Mutex
 	batchBuffer []*sarama.ConsumerMessage
 	lastCommit  time.Time
+	rdb         *redis.Client
 }
 
-var _ ConsumeHandler = (*LikeHandler)(nil)
+var _ ConsumeHandler = (*ConsumerGroup)(nil)
 
-func (l *LikeHandler) Setup(session sarama.ConsumerGroupSession) error {
+func (l *ConsumerGroup) Setup(session sarama.ConsumerGroupSession) error {
 	log.Printf("Consumer group session setup for member: %s\n", session.MemberID())
+	close(l.ready)
 	l.wg.Add(1)
 	go l.processBatches(session)
-	close(l.ready)
 	return nil
 }
 
-func (l *LikeHandler) Cleanup(session sarama.ConsumerGroupSession) error {
+func (l *ConsumerGroup) Cleanup(session sarama.ConsumerGroupSession) error {
 	log.Println("Consumer group session cleanup for member: ", session.MemberID())
 	l.cancel()
 	l.wg.Wait()
@@ -54,7 +58,7 @@ func (l *LikeHandler) Cleanup(session sarama.ConsumerGroupSession) error {
 	return nil
 }
 
-func (l *LikeHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+func (l *ConsumerGroup) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	log.Println("Consumer group session claim for member: ", session.MemberID())
 	for {
 		select {
@@ -76,9 +80,9 @@ func (l *LikeHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sa
 	}
 }
 
-func NewLikeHandler(batchSize int, flushTime time.Duration) *LikeHandler {
+func NewLikeHandler(batchSize int, flushTime time.Duration) *ConsumerGroup {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &LikeHandler{
+	return &ConsumerGroup{
 		ready:      make(chan bool),
 		message:    make(chan *sarama.ConsumerMessage, 10000),
 		batchSize:  batchSize,
@@ -89,7 +93,7 @@ func NewLikeHandler(batchSize int, flushTime time.Duration) *LikeHandler {
 	}
 }
 
-func (l *LikeHandler) processBatches(session sarama.ConsumerGroupSession) {
+func (l *ConsumerGroup) processBatches(session sarama.ConsumerGroupSession) {
 	defer l.wg.Done()
 	ticker := time.NewTicker(l.flushTime)
 	defer ticker.Stop()
@@ -116,7 +120,7 @@ func (l *LikeHandler) processBatches(session sarama.ConsumerGroupSession) {
 		case <-ticker.C:
 			var curBatch []*sarama.ConsumerMessage
 			l.mu.Lock()
-			if len(l.batchBuffer) > 0 && time.Since(l.lastCommit) > l.flushTime {
+			if len(l.batchBuffer) > 0 && time.Since(l.lastCommit) >= l.flushTime {
 				log.Printf("Batch interval reached, processing batch (%d messages).\n", len(l.batchBuffer))
 				curBatch = l.batchBuffer
 				l.batchBuffer = nil
@@ -136,19 +140,19 @@ func (l *LikeHandler) processBatches(session sarama.ConsumerGroupSession) {
 	}
 }
 
-func (l *LikeHandler) commit(session sarama.ConsumerGroupSession, batch []*sarama.ConsumerMessage) {
+func (l *ConsumerGroup) commit(session sarama.ConsumerGroupSession, batch []*sarama.ConsumerMessage) {
 	counts := make(map[string]int)
 	for _, topic := range batch {
-		var model model.SocialAction
-    if err := json.Unmarshal(topic.Value, &model); err != nil {
-  		log.Println("error in json unmarshal")
+		var social model.SocialAction
+		if err := json.Unmarshal(topic.Value, &social); err != nil {
+			log.Println("error in json unmarshal")
 		}
-		counts[model.PostID] += model.Like
+		counts[fmt.Sprintf("%s:%s", social.PostID, social.ThumbType)] += social.Num
 	}
 
-	//	TODO:write in redis
-	log.Printf("Simulating writing %d like counts to database: %v\n", len(counts), counts["1"])
-
+	if errors.Is(model.ErrPipe, model.RunScript(l.ctx, counts)) {
+		log.Println("error in run script")
+	}
 	last := batch[len(batch)-1]
 	session.MarkMessage(last, "")
 	session.Commit()

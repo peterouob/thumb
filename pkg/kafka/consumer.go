@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-type LikeConsumer struct {
+type Consumer struct {
 	consumer   sarama.ConsumerGroup
 	groupId    string
 	topic      []string
 	batchSize  int
 	flushTime  time.Duration
-	handler    *LikeHandler
+	handler    *ConsumerGroup
 	wg         sync.WaitGroup
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -27,7 +27,7 @@ type LikeConsumer struct {
 	sync.Mutex
 }
 
-func NewConsumer(groupId string, topic []string, batchSize int, flushTime time.Duration) *LikeConsumer {
+func NewConsumer(groupId string, topic []string, batchSize int, flushTime time.Duration) *Consumer {
 	conf := sarama.NewConfig()
 	conf.Consumer.Fetch.Default = 1024 * 1024
 	conf.Consumer.MaxWaitTime = 500 * time.Millisecond
@@ -42,7 +42,7 @@ func NewConsumer(groupId string, topic []string, batchSize int, flushTime time.D
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	c := &LikeConsumer{
+	c := &Consumer{
 		consumer:   consumer,
 		groupId:    groupId,
 		topic:      topic,
@@ -61,9 +61,10 @@ func NewConsumer(groupId string, topic []string, batchSize int, flushTime time.D
 	return c
 }
 
-func (c *LikeConsumer) StartConsume() {
+func (c *Consumer) StartConsume() {
 	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		for {
 			if err := c.consumer.Consume(c.ctx, c.topic, c.handler); err != nil {
 				if errors.Is(err, sarama.ErrClosedConsumerGroup) {
@@ -88,7 +89,7 @@ func (c *LikeConsumer) StartConsume() {
 	log.Printf("Sarama batch consumer group up and running! [topic: %s, group: %s]\n", c.topic, c.groupId)
 }
 
-func (c *LikeConsumer) handleError() {
+func (c *Consumer) handleError() {
 	for err := range c.consumer.Errors() {
 		if err != nil {
 			// TODO:prometheus
@@ -97,7 +98,7 @@ func (c *LikeConsumer) handleError() {
 	}
 }
 
-func (c *LikeConsumer) Close() error {
+func (c *Consumer) Close() error {
 	log.Println("Closing Kafka consumer group...")
 	c.cancel()
 	c.wg.Wait()
@@ -108,7 +109,7 @@ func (c *LikeConsumer) Close() error {
 	return nil
 }
 
-func (c *LikeConsumer) backOff() time.Duration {
+func (c *Consumer) backOff() time.Duration {
 	curRetries := c.backoffCfg.GetRetries()
 
 	if c.backoffCfg.GetRetries() == 0 {
