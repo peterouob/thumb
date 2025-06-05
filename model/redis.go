@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/redis/go-redis/v9"
 	"log"
 	"strings"
@@ -34,8 +35,8 @@ func RunScript(ctx context.Context, counts map[string]int) error {
     return redis.call("HINCRBY", KEYS[1], ARGV[1], ARGV[2])
     `
 	for k, v := range counts {
-		_, thumbType, _ := strings.Cut(k, ":")
-		pipe.Eval(ctx, luaScript, []string{k}, thumbType, v)
+		postId, thumbType, _ := strings.Cut(k, ":")
+		pipe.Eval(ctx, luaScript, []string{fmt.Sprintf("count_%s", postId)}, thumbType, v)
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
